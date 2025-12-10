@@ -41,7 +41,11 @@ class FootballNeuralModel:
         """Build MLP model"""
         logger.info("Building MLP model")
         
-        inputs = layers.Input(shape=(self.input_dim,), name='match_features')
+        # Use unique model name with timestamp to avoid conflicts
+        import time
+        model_id = int(time.time() * 1000) % 1000000
+        
+        inputs = layers.Input(shape=(self.input_dim,), name=f'match_features_{model_id}')
         
         x = inputs
         for i, units in enumerate(self.config['mlp_layers']):
@@ -49,21 +53,21 @@ class FootballNeuralModel:
                 units, 
                 activation='relu',
                 kernel_regularizer=keras.regularizers.l2(0.001),
-                name=f'dense_{i+1}'
+                name=f'dense_{i+1}_{model_id}'
             )(x)
-            x = layers.BatchNormalization(name=f'bn_{i+1}')(x)
-            x = layers.Dropout(self.config['dropout_rate'], name=f'dropout_{i+1}')(x)
+            x = layers.BatchNormalization(name=f'bn_{i+1}_{model_id}')(x)
+            x = layers.Dropout(self.config['dropout_rate'], name=f'dropout_{i+1}_{model_id}')(x)
         
-        result_output = layers.Dense(3, activation='softmax', name='match_result')(x)
+        result_output = layers.Dense(3, activation='softmax', name=f'match_result_{model_id}')(x)
         
-        home_goals_branch = layers.Dense(32, activation='relu')(x)
-        home_goals_output = layers.Dense(1, activation='relu', name='home_goals')(home_goals_branch)
+        home_goals_branch = layers.Dense(32, activation='relu', name=f'home_goals_branch_{model_id}')(x)
+        home_goals_output = layers.Dense(1, activation='relu', name=f'home_goals_{model_id}')(home_goals_branch)
         
-        away_goals_branch = layers.Dense(32, activation='relu')(x)
-        away_goals_output = layers.Dense(1, activation='relu', name='away_goals')(away_goals_branch)
+        away_goals_branch = layers.Dense(32, activation='relu', name=f'away_goals_branch_{model_id}')(x)
+        away_goals_output = layers.Dense(1, activation='relu', name=f'away_goals_{model_id}')(away_goals_branch)
         
-        over_2_5_output = layers.Dense(1, activation='sigmoid', name='over_2_5')(x)
-        btts_output = layers.Dense(1, activation='sigmoid', name='btts')(x)
+        over_2_5_output = layers.Dense(1, activation='sigmoid', name=f'over_2_5_{model_id}')(x)
+        btts_output = layers.Dense(1, activation='sigmoid', name=f'btts_{model_id}')(x)
         
         model = keras.Model(
             inputs=inputs,
@@ -74,7 +78,7 @@ class FootballNeuralModel:
                 'over_2_5': over_2_5_output,
                 'btts': btts_output
             },
-            name='football_mlp_predictor'
+            name=f'football_mlp_predictor_{model_id}'
         )
         
         model.compile(
@@ -106,6 +110,9 @@ class FootballNeuralModel:
     
     def build_model(self) -> keras.Model:
         """Build model based on type"""
+        if self.model is not None:
+            return self.model
+        
         if self.model_type == 'lstm':
             # LSTM implementation can be added if needed
             logger.warning("LSTM not implemented, using MLP")
@@ -117,12 +124,16 @@ class FootballNeuralModel:
     
     def predict_single(self, features: np.ndarray) -> Dict:
         """Predict for single match"""
-        if not self.is_trained:
+        if not self.is_trained or self.model is None:
             # Return baseline prediction if model not trained
             return self._baseline_prediction(features)
         
+        # Ensure features is properly shaped
+        features = np.asarray(features)
         if len(features.shape) == 1:
             features = features.reshape(1, -1)
+        elif len(features.shape) > 2:
+            features = features.flatten().reshape(1, -1)
         
         raw_predictions = self.model.predict(features, verbose=0)
         
@@ -151,9 +162,13 @@ class FootballNeuralModel:
     
     def _baseline_prediction(self, features: np.ndarray) -> Dict:
         """Baseline prediction when model not trained"""
+        # Ensure features is 1D array
+        if len(features.shape) > 1:
+            features = features.flatten()
+        
         # Simple heuristic based on features
-        home_strength = features[0] if len(features) > 0 else 0.4
-        away_strength = features[8] if len(features) > 8 else 0.3
+        home_strength = float(features[0]) if len(features) > 0 else 0.4
+        away_strength = float(features[8]) if len(features) > 8 else 0.3
         
         total = home_strength + away_strength + 0.25
         
