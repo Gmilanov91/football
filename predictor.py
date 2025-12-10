@@ -57,10 +57,18 @@ class FootballPredictor:
             if self.model is None:
                 input_dim = normalized_features.shape[1]
                 self.model = FootballNeuralModel(model_type=self.model_type, input_dim=input_dim)
-                self.model.build_model()
+                # Build model only once
+                if self.model.model is None:
+                    self.model.build_model()
                 self.model.is_trained = False  # Model not trained, will use baseline
             
             features_array = normalized_features.values
+            # Ensure it's a numpy array and flatten if needed
+            if isinstance(features_array, pd.DataFrame):
+                features_array = features_array.values
+            if len(features_array.shape) > 1 and features_array.shape[0] == 1:
+                features_array = features_array[0]
+            
             prediction = self.model.predict_single(features_array)
             
             # Add details
